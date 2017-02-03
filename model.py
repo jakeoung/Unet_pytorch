@@ -2,31 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
-def add_upconv_stage(in_coarse, in_fine, pred, upsample, upconv):
-  """
-  deconvolution stage in flownets model
-  1. prediction flow from the coarse feature by convolution (pred)
-  2. concatenation of upconv of in_coarse, in_fine, upsampled flow
-  :param in_coarse:
-  :param in_fine:
-  :param pred: convolution
-  :param upsample:
-  :return:
-  """
-
-  ## flow prediction
-  flow = pred(in_coarse)
-
-  ## upsampling of flow map
-  flow_up = upsample(flow)
-
-  ## upconvolution of in_coarse
-  coarse_upconv = upconv(in_coarse)
-
-  concat = torch.cat((coarse_upconv, in_fine, flow_up), 1)
-
-  return concat, flow
-
 def add_conv_stage(dim_in, dim_out, kernel_size=3, stride=1, padding=1, bias=True, useBN=False):
   if useBN:
     return nn.Sequential(
@@ -41,12 +16,11 @@ def add_conv_stage(dim_in, dim_out, kernel_size=3, stride=1, padding=1, bias=Tru
     return nn.Sequential(
       nn.Conv2d(dim_in, dim_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias),
       nn.ReLU(),
-      nn.Conv2d(dim_in, dim_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias),
+      nn.Conv2d(dim_out, dim_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias),
       nn.ReLU()
     )
 
 def add_merge_stage(ch_coarse, ch_fine, in_coarse, in_fine, upsample):
-
   conv = nn.ConvTranspose2d(ch_coarse, ch_fine, 4, 2, 1, bias=False)
   torch.cat(conv, in_fine)
 
@@ -60,9 +34,6 @@ def upsample(ch_coarse, ch_fine):
     nn.ConvTranspose2d(ch_coarse, ch_fine, 4, 2, 1, bias=False),
     nn.ReLU()
   )
-
-
-
 
 class Net(nn.Module):
   def __init__(self, useBN=False):
@@ -80,7 +51,7 @@ class Net(nn.Module):
     self.conv1m = add_conv_stage( 64,  32, useBN=useBN)
 
     self.conv0  = nn.Sequential(
-        nn.Conv2d(1, 1, 3, 1, 1),
+        nn.Conv2d(32, 1, 3, 1, 1),
         nn.Sigmoid()
     )
 
@@ -100,23 +71,22 @@ class Net(nn.Module):
 
   def forward(self, x):
 
-    conv1_out = self.max_pool(self.conv1(x))
-    conv2_out = self.max_pool(self.conv2(conv1_out))
-    conv3_out = self.max_pool(self.conv3(conv2_out))
-    conv4_out = self.max_pool(self.conv4(conv3_out))
-    conv5_out = self.conv5(conv4_out)
+    conv1_out = self.conv1(x)
+    conv2_out = self.conv2(self.max_pool(conv1_out))
+    conv3_out = self.conv3(self.max_pool(conv2_out))
+    conv4_out = self.conv4(self.max_pool(conv3_out))
+    conv5_out = self.conv5(self.max_pool(conv4_out))
 
     conv5m_out = torch.cat((self.upsample54(conv5_out), conv4_out), 1)
     conv4m_out = self.conv4m(conv5m_out)
 
-    # now channel: 256
     conv4m_out_ = torch.cat((self.upsample43(conv4m_out), conv3_out), 1)
     conv3m_out = self.conv3m(conv4m_out_)
 
-    conv3m_out_ = torch.cat((self.upsample32(conv3m_out), conv4_out), 1)
+    conv3m_out_ = torch.cat((self.upsample32(conv3m_out), conv2_out), 1)
     conv2m_out = self.conv2m(conv3m_out_)
 
-    conv2m_out_ = torch.cat((self.upsample21(conv2m_out), conv4_out), 1)
+    conv2m_out_ = torch.cat((self.upsample21(conv2m_out), conv1_out), 1)
     conv1m_out = self.conv1m(conv2m_out_)
 
     conv0_out = self.conv0(conv1m_out)
