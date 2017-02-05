@@ -54,5 +54,10 @@ To run our pre-trained model, commit:
 ```python3 main.py data --resume checkpoint_BN.tar --niter 0 --useBN```
 
 ![original](assets/ori_5.png)
+Image
+
 ![ground truth](assets/gt_5.png)
+Ground truth
+
 ![prediction](assets/pred_5.png)
+Predicted segmentation
