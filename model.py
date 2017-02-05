@@ -70,8 +70,8 @@ class Net(nn.Module):
 
 
   def forward(self, x):
-
     conv1_out = self.conv1(x)
+    #return self.upsample21(conv1_out)
     conv2_out = self.conv2(self.max_pool(conv1_out))
     conv3_out = self.conv3(self.max_pool(conv2_out))
     conv4_out = self.conv4(self.max_pool(conv3_out))

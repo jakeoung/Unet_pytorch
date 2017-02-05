@@ -6,6 +6,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.tensor
+import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
 from PIL import Image
@@ -24,9 +25,8 @@ parser.add_argument('--start_epoch', type=int, default=0, help='number of epoch 
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
 parser.add_argument('--cuda'  , action='store_true', help='enables cuda')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-
-if torch.cuda.is_available() and not opt.cuda:
-    print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+parser.add_argument('--useBN', action='store_true', help='enalbes batch normalization')
+parser.add_argument('--output_name', default='checkpoint.tar', type=str, help='output checkpoint filename')
 
 args = parser.parse_args()
 print(args)
@@ -36,9 +36,10 @@ dataset = kaggle2016nerve(args.dataroot)
 train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, num_workers=args.workers)
 
 ############## create model
-model = Net()
+model = Net(args.useBN)
 if args.cuda:
   model.cuda()
+  cudnn.benchmark = True
 
 ############## resume
 if args.resume:
@@ -54,12 +55,12 @@ if args.resume:
     print("=> no checkpoint found at '{}'".format(args.resume))
 
 
-def save_checkpoint(state, filename='checkpoint.tar'):
+def save_checkpoint(state, filename=args.output_name):
   torch.save(state, filename)
 
 ############## training
-model.train()
 optimizer = optim.Adagrad(model.parameters(), lr=args.lr)
+model.train()
 
 # print(model.state_dict())
 
@@ -68,29 +69,40 @@ def train(epoch):
   training
   """
   loss_fn = nn.MSELoss()
+  if args.cuda:
+    loss_fn = loss_fn.cuda()
+
+  loss_sum = 0
 
   for i, (x, y) in enumerate(train_loader):
     x, y_true = Variable(x), Variable(y)
     if args.cuda:
-      x.cuda()
+      x = x.cuda()
+      y_true = y_true.cuda()
 
-    for test in range(1):
-      optimizer.zero_grad()
+    for ii in range(1):
       y_pred = model(x)
 
       loss = loss_fn(y_pred, y_true)
+      
+      optimizer.zero_grad()
       loss.backward()
+      loss_sum += loss.data[0]
 
       optimizer.step()
+ 
+    if i % 5 == 0:
+      print('batch no.: {}, loss: {}'.format(i, loss.data[0]))
 
-  print('epoch: {}, loss: {}'.format(epoch,loss))
+  print('epoch: {}, epoch loss: {}'.format(epoch,loss.data[0]/len(train_loader) ))
 
   save_checkpoint({
     'epoch': epoch + 1,
-    'state_dict': model.state_dict()
+    'state_dict': model.state_dict(),
+    'loss': loss.data[0]/len(train_loader)
   })
 
-for epoch in range(niter):
+for epoch in range(args.niter):
   train(epoch)
 
 
